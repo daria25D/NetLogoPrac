@@ -1,10 +1,10 @@
-globals [rules number-r]
+globals [rules]
 patches-own [state]
 
 to setup
   clear-all
-  set number-r number
-  if rang-2? [set number-r random (2 ^ 32)]
+  ;set number-r number
+  ;if rang-2? [set number-r random (2 ^ 32)]
   make-rules
   show rules
   ask patches [setup-patch]
@@ -75,14 +75,26 @@ to update-patch
   ifelse pxcor = min-pxcor or pxcor = max-pxcor and boundary != "cyclic"
   [set state boundary]
   [
-    if rang-2? = false and reversive? = false [
+    if (rang-2? = false and reversive? = false) or (rang-2? = false and reversive? = true and pycor >= max-pycor - 1) [
       let a [state] of patch-at -1 1
       let b [state] of patch-at 0 1
       let c [state] of patch-at 1 1
       let k 4 * a + 2 * b + c
       set state item k rules
     ]
-    if rang-2? = true and reversive? = false [
+    if rang-2? = false and reversive? = true and pycor < max-pycor - 1[
+      let a [state] of patch-at -1 1
+      let b [state] of patch-at 0 1
+      let c [state] of patch-at 1 1
+      let k 4 * a + 2 * b + c
+      let q [state] of patch-at 0 2
+      let p 0
+      if k >= 0 [set p item k rules]
+      if (p = 1 and q = 1) or (p = 0 and q = 0) [set state 0]
+      if (p = 1 and q = 0) or (p = 0 and q = 1) [set state 1]
+
+    ]
+    if rang-2? = true and reversive? = false or rang-2? = true and pycor >= max-pycor - 1  [
       let a [state] of patch-at -2 1
       let b [state] of patch-at -1 1
       let c [state] of patch-at 0 1
@@ -91,13 +103,14 @@ to update-patch
       let k 16 * a + 8 * b + 4 * c + 2 * d + f
       set state item k rules
     ]
-    if rang-2? = true and reversive? = true [
+    if rang-2? = true and reversive? = true  and pycor < max-pycor - 1 [
       let a [state] of patch-at -2 1
       let b [state] of patch-at -1 1
-      let q [state] of patch-at 0 1
+      let c [state] of patch-at 0 1
       let d [state] of patch-at 1 1
       let f [state] of patch-at 2 1
-      let k 16 * a + 8 * b + 4 * q + 2 * d + f
+      let k 16 * a + 8 * b + 4 * c + 2 * d + f
+      let q [state] of patch-at 0 2
       let p item k rules
       if (p = 1 and q = 1) or (p = 0 and q = 0) [set state 0]
       if (p = 1 and q = 0) or (p = 0 and q = 1) [set state 1]
@@ -105,16 +118,15 @@ to update-patch
   ]
   recolor
 end
-
 @#$#@#$#@
 GRAPHICS-WINDOW
 183
 12
-795
-425
+898
+494
 -1
 -1
-4.0
+4.6832
 1
 10
 1
@@ -177,7 +189,7 @@ number
 number
 0
 255
-204.0
+45.0
 1
 1
 NIL
@@ -189,7 +201,7 @@ INPUTBOX
 171
 151
 color-0
-78.0
+16.0
 1
 0
 Color
@@ -200,7 +212,7 @@ INPUTBOX
 172
 219
 color-1
-24.0
+53.0
 1
 0
 Color
@@ -213,7 +225,7 @@ CHOOSER
 init-state
 init-state
 "single 1" "random" "cluster" "user-input"
-2
+0
 
 CHOOSER
 11
@@ -234,7 +246,7 @@ probability-1
 probability-1
 0
 1
-1.0
+0.54
 0.01
 1
 NIL
@@ -261,7 +273,7 @@ INPUTBOX
 177
 455
 user-init
-1000111111001
+10
 1
 0
 String
@@ -273,15 +285,15 @@ SWITCH
 495
 rang-2?
 rang-2?
-0
+1
 1
 -1000
 
 MONITOR
-184
-433
-278
-478
+12
+501
+106
+546
 NIL
 number-r
 17
@@ -289,15 +301,26 @@ number-r
 11
 
 SWITCH
-291
-433
-419
-466
+119
+501
+247
+534
 reversive?
 reversive?
 0
 1
 -1000
+
+INPUTBOX
+13
+554
+174
+614
+number-r
+1001.0
+1
+0
+Number
 
 @#$#@#$#@
 ## WHAT IS IT?

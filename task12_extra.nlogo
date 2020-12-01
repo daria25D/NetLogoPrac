@@ -1,104 +1,222 @@
-globals [rules]
-patches-own [state]
+patches-own [state cell next-state-exists? next-state]
+globals [state-colors]
 
-to setup
+to setup [mode]
   clear-all
-  make-rules
-  show rules
-  ask patches [setup-patch]
-  ask patches [recolor]
+  setup-states
+  ask patches [setup-patch mode]
   reset-ticks
 end
 
-to go
-  let c-l max-pycor - ticks - 1
-  ask patches with [pycor = c-l] [
-    update-patch
-  ]
-  if c-l = min-pycor [stop]
-  tick
-end
-
-to make-rules
-  ;set number random (3 ^ 27)
-  let n number
-  set rules (list)
-  repeat 27 [
-    set rules lput (n mod 3) rules
-    set n floor (n / 3)
-  ]
-
-end
-
-to setup-patch
-  ifelse pycor != max-pycor [
-    set state -1
+to setup-states
+  set state-colors (list)
+  ifelse not excitation? [
+    let i 13
+    repeat m  [
+      if i < 0 [set i 13]
+      set state-colors lput item i base-colors state-colors
+      set i i - 1
+    ]
   ]
   [
-    if init-state = "single 1" [
-      ifelse pxcor = 0 [set state 1][set state 0]
-    ]
-    if init-state = "single-2" [
-      ifelse pxcor = 0 [set state 2][set state 0]
-    ]
-    if init-state = "random" [
-      ifelse random-float 1 < probability-2 [set state 2]
-      [
-        ifelse random-float 1 < probability-1 [set state 1]
-        [set state 0]
-      ]
-    ]
-    if init-state = "cluster" [
-      let half-min -1 * floor(cluster-size / 2)
-      let half-max ceiling(cluster-size / 2)
-      ifelse pxcor > half-min and pxcor < half-max
-      [
-        ifelse random-float 1 < probability-2 [set state 2]
-        [
-          if random-float 1 < probability-1 [set state 1]
-        ]
-      ]
-      [set state 0]
-    ]
-    if init-state = "user-input" [
-      let l length user-init
-      let idx pxcor mod l
-      let user-elem item idx user-init
-      if user-elem = "2" [set state 2]
-      if user-elem = "1" [set state 1]
-      if user-elem = "0" [set state 0]
+    let i 1
+    let c rgb 255 255 255
+    set state-colors lput c state-colors
+    repeat m - 1 [
+      set c rgb 255 (i / m * 255) 0
+      set state-colors lput c state-colors
+      set i i + 1
     ]
   ]
+  ;print state-colors
+end
+
+to setup-patch [mode]
+  set pcolor white
+  ifelse mode = "agar" [
+    let c pycor mod 3 < 2 and pxcor mod 3 < 2
+    set state get-state c mode
+  ]
+  [set state get-state (mode = "random" and random 100 < density) mode]
+  sprout 1 [
+    set shape "full-square"
+    set size 0.99
+  ]
+  set cell one-of turtles-here
+  recolor
+end
+
+to-report get-state [x mode]
+  ifelse x [
+    ifelse mode = "random" and not excitation?
+    [report random m]
+    [report 1]
+  ]
+  [report 0]
 end
 
 to recolor
-  if state = -1 [set pcolor white]
-  if state = 0 [set pcolor color-0]
-  if state = 1 [set pcolor color-1]
-  if state = 2 [set pcolor color-2]
+  let s state
+  ask cell [set color item s state-colors]
 end
 
-to update-patch
-  ifelse pxcor = min-pxcor or pxcor = max-pxcor and boundary != "cyclic"
-  [set state boundary]
-  [
-    let a [state] of patch-at -1 1
-    let b [state] of patch-at 0 1
-    let c [state] of patch-at 1 1
-    let k 9 * a + 3 * b + c
-    set state item k rules
+to sync-mode
+  ask patches [
+    set next-state (state + 1) mod m
+    ifelse Moore? [
+      let cur-neighbors neighbors with [state = [next-state] of myself]
+      set next-state-exists? any? cur-neighbors
+    ]
+    [
+      let cur-neighbors neighbors4 with [state = [next-state] of myself]
+      set next-state-exists? any? cur-neighbors
+    ]
   ]
-  recolor
+  ask patches [
+    if next-state-exists? [
+      set state next-state
+    ]
+    recolor
+  ]
+end
+
+to excitate
+  ask patches [
+    set next-state (state + 1) mod m
+    ifelse Moore? [
+      ifelse state = 0 [
+        let cur-neighbors neighbors with [state = 1]
+        set next-state-exists? (count cur-neighbors >= threshold)
+      ]
+      [set next-state-exists? true]
+    ]
+    [
+      ifelse state = 0 [
+        let cur-neighbors neighbors4 with [state = 1]
+        set next-state-exists? (count cur-neighbors >= threshold)
+      ]
+      [set next-state-exists? true]
+    ]
+  ]
+  ask patches [
+    if next-state-exists? [
+      set state next-state
+    ]
+    recolor
+  ]
+end
+
+to go
+  ifelse not excitation? [sync-mode]
+  [excitate]
+  tick
+end
+
+to step
+  ifelse not excitation? [sync-mode]
+  [excitate]
+end
+
+to draw
+  let p patch mouse-xcor mouse-ycor
+  let erase? [state = 1] of p
+  while [mouse-down?] [
+    (ifelse
+      draw-type = "single" [
+        ask patch mouse-xcor mouse-ycor [
+          set state get-state not erase? "single"
+          recolor
+        ]
+      ]
+      draw-type = "glider-1" [
+        let patch-list (list)
+        set patch-list lput (patch mouse-xcor mouse-ycor) patch-list
+        set patch-list lput (patch (mouse-xcor - 1) (mouse-ycor - 1)) patch-list
+        set patch-list lput (patch (mouse-xcor - 1) (mouse-ycor - 2)) patch-list
+        set patch-list lput (patch mouse-xcor (mouse-ycor - 2)) patch-list
+        set patch-list lput (patch (mouse-xcor + 1) (mouse-ycor - 2)) patch-list
+        foreach patch-list [
+          x -> ask x [
+            set state get-state not erase? "single"
+            recolor
+          ]
+        ]
+      ]
+      draw-type = "glider-2" [
+        let patch-list (list)
+        set patch-list lput (patch mouse-xcor mouse-ycor) patch-list
+        set patch-list lput (patch (mouse-xcor + 1) (mouse-ycor - 1)) patch-list
+        set patch-list lput (patch (mouse-xcor + 2) (mouse-ycor - 1)) patch-list
+        set patch-list lput (patch (mouse-xcor + 2) mouse-ycor) patch-list
+        set patch-list lput (patch (mouse-xcor + 2) (mouse-ycor + 1)) patch-list
+        foreach patch-list [
+          x -> ask x [
+            set state get-state not erase? "single"
+            recolor
+          ]
+        ]
+      ]
+      draw-type = "glider-3" [
+        let patch-list (list)
+        set patch-list lput (patch mouse-xcor mouse-ycor) patch-list
+        set patch-list lput (patch (mouse-xcor + 1) (mouse-ycor + 1)) patch-list
+        set patch-list lput (patch (mouse-xcor + 1) (mouse-ycor + 2)) patch-list
+        set patch-list lput (patch mouse-xcor (mouse-ycor + 2)) patch-list
+        set patch-list lput (patch (mouse-xcor - 1) (mouse-ycor + 2)) patch-list
+        foreach patch-list [
+          x -> ask x [
+            set state get-state not erase? "single"
+            recolor
+          ]
+        ]
+      ]
+      draw-type = "glider-4" [
+        let patch-list (list)
+        set patch-list lput (patch mouse-xcor mouse-ycor) patch-list
+        set patch-list lput (patch (mouse-xcor - 1) (mouse-ycor + 1)) patch-list
+        set patch-list lput (patch (mouse-xcor - 2) (mouse-ycor + 1)) patch-list
+        set patch-list lput (patch (mouse-xcor - 2) mouse-ycor) patch-list
+        set patch-list lput (patch (mouse-xcor - 2) (mouse-ycor - 1)) patch-list
+        foreach patch-list [
+          x -> ask x [
+            set state get-state not erase? "single"
+            recolor
+          ]
+        ]
+      ]
+      draw-type = "square" [
+        let patch-list (list)
+        let i mouse-ycor
+        let j mouse-xcor
+        let k mouse-xcor
+        repeat 3 [
+          repeat 3 [
+            set patch-list lput (patch j i) patch-list
+            set j j + 1
+          ]
+          set i i + 1
+          set j k
+        ]
+        foreach patch-list [
+          x -> ask x [
+            set state get-state not erase? "single"
+            recolor
+          ]
+        ]
+      ]
+    )
+    display
+  ]
 end
 @#$#@#$#@
 GRAPHICS-WINDOW
-183
-12
-795
-425
+210
+10
+704
+505
 -1
 -1
-4.0
+6.0
 1
 10
 1
@@ -108,10 +226,10 @@ GRAPHICS-WINDOW
 1
 1
 1
--75
-75
--50
-50
+-40
+40
+-40
+40
 1
 1
 1
@@ -119,12 +237,12 @@ ticks
 30.0
 
 BUTTON
-13
-10
-86
-43
-NIL
-setup
+11
+14
+84
+47
+clear
+setup \"clear\"
 NIL
 1
 T
@@ -136,10 +254,10 @@ NIL
 1
 
 BUTTON
-109
-11
-172
-44
+12
+52
+86
+85
 NIL
 go
 T
@@ -152,133 +270,150 @@ NIL
 NIL
 0
 
-INPUTBOX
-11
-48
-172
-108
-color-0
-73.0
-1
-0
-Color
-
-INPUTBOX
-11
-109
-172
-169
-color-1
-25.0
-1
-0
-Color
-
-CHOOSER
-10
-232
-172
-277
-init-state
-init-state
-"single 1" "random" "cluster" "user-input"
-0
-
-CHOOSER
-10
-282
+BUTTON
+87
+14
 173
-327
-boundary
-boundary
-"cyclic" 0 1 2
-0
+47
+random
+setup \"random\"
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
 
 SLIDER
-10
-331
-174
-364
-probability-1
-probability-1
-0
-1
-0.58
-0.01
-1
-NIL
-HORIZONTAL
-
-SLIDER
-10
-405
-174
-438
-cluster-size
-cluster-size
-0
-75
-40.0
-1
-1
-NIL
-HORIZONTAL
-
-INPUTBOX
-10
-441
-176
-501
-user-init
-101
-1
-0
-String
-
-INPUTBOX
-11
-170
+13
+88
 172
-230
-color-2
-125.0
+121
+density
+density
+0
+100
+5.0
 1
-0
-Color
-
-SLIDER
-10
-369
-174
-402
-probability-2
-probability-2
-0
-1 - probability-1
-0.14
-0.01
 1
 NIL
 HORIZONTAL
 
-MONITOR
-184
-440
-304
-485
+BUTTON
+93
+52
+171
+85
 NIL
-number
-17
+step
+NIL
 1
-11
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+0
+
+BUTTON
+13
+125
+171
+158
+NIL
+draw
+T
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+SWITCH
+81
+208
+171
+241
+async?
+async?
+1
+1
+-1000
+
+BUTTON
+13
+208
+78
+241
+agar
+setup \"agar\"
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+CHOOSER
+13
+159
+171
+204
+draw-type
+draw-type
+"single" "glider-1" "glider-2" "glider-3" "glider-4" "square"
+0
+
+SWITCH
+14
+244
+171
+277
+Moore?
+Moore?
+0
+1
+-1000
 
 INPUTBOX
-326
-438
-487
-498
-number
-6.0
+11
+282
+172
+342
+m
+3.0
+1
+0
+Number
+
+SWITCH
+11
+345
+172
+378
+excitation?
+excitation?
+0
+1
+-1000
+
+INPUTBOX
+10
+383
+171
+443
+threshold
+1.0
 1
 0
 Number
@@ -461,6 +596,11 @@ Circle -7500403 true true 96 51 108
 Circle -16777216 true false 113 68 74
 Polygon -10899396 true false 189 233 219 188 249 173 279 188 234 218
 Polygon -10899396 true false 180 255 150 210 105 210 75 240 135 240
+
+full-square
+false
+0
+Rectangle -7500403 true true 0 0 300 300
 
 house
 false
